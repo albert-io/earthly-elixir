@@ -52,6 +52,17 @@ test:
     # Run dialyzer
     COPY --if-exists .dialyzer_ignore.exs ./
     DO elixir+MIX --command="dialyzer"
+
+# optionally provide a unique cache id to prevent overriding the global deps and _build cache
+# e.g. useful for prs where you don't want to override trunk deps from a branch
+pull-request:
+    FROM +build
+    # Run tests
+    DO elixir+MIX --command="test" --cache_id="some-branch-name"
+
+    # Run dialyzer
+    COPY --if-exists .dialyzer_ignore.exs ./
+    DO elixir+MIX --command="dialyzer" --cache_id="some-branch-name"
 ```
 
 ## Contributing
