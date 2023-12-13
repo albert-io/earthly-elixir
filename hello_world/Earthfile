@@ -1,0 +1,84 @@
+VERSION --global-cache 0.7
+
+INIT:
+    COMMAND
+    ARG OS_VERSION
+    ARG ELIXIR_VERSION
+    ARG OTP_VERSION
+    ARG DEPS_DIR=deps
+    ARG BUILD_DIR=_build
+    ENV OS_VERSION=$OS_VERSION
+    ENV ELIXIR_VERSION=$ELIXIR_VERSION
+    ENV OTP_VERSION=$OTP_VERSION
+    ENV DEPS_DIR=$DEPS_DIR
+    ENV BUILD_DIR=$BUILD_DIR
+    ENV EARTHLY_ELIXIR_DEPS_CACHE_ID="${ELIXIR_VERSION}#${OTP_VERSION}#${OS_VERSION}#deps-cache"
+    ENV EARTHLY_ELIXIR_BUILD_CACHE_ID="${ELIXIR_VERSION}#${OTP_VERSION}#${OS_VERSION}#build-cache"
+
+MIX:
+    COMMAND
+    ARG --required command
+    ARG MIX_ENV
+    ARG read_only=true
+    DO +RUN_WITH_CACHE \
+        --command="set -e;
+            MIX_ENV=$MIX_ENV mix $command;"
+
+RUN_WITH_CACHE:
+    COMMAND
+    ARG --required command
+    ARG deps_cache_id=${EARTHLY_ELIXIR_DEPS_CACHE_ID}
+    ARG build_cache_id=${EARTHLY_ELIXIR_BUILD_CACHE_ID}
+    RUN --mount=type=cache,mode=0777,id=$deps_cache_id,sharing=locked,target=$DEPS_DIR \
+        --mount=type=cache,mode=0777,id=$build_cache_id,sharing=locked,target=$BUILD_DIR \
+        set -e; \
+        printf "Running:\n      $command\n"; \
+        eval $command
+
+build:
+    # see https://hexdocs.pm/phoenix/1.7.10/releases.html#containers for an example build container
+    ARG ELIXIR_VERSION=1.15.4
+    ARG OTP_VERSION=26.0.2
+    ARG DEBIAN_VERSION=bullseye-20230612
+    FROM hexpm/elixir:$ELIXIR_VERSION-erlang-$OTP_VERSION-debian-$DEBIAN_VERSION
+    RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    ca-certificates \
+    build-essential \
+    && apt-get clean && rm -f /var/lib/apt/lists/*_*
+    WORKDIR /app
+    DO +INIT
+    DO +MIX --command="do local.rebar --force, local.hex --force"
+    # oban is commonly used in the elixir community and we use it
+    # i'm not sure how to pass secrets and then wrap this command using the MIX function
+    # it would be nice to be able to optionally include it because it's so widely used
+    # RUN --secret OBAN_KEY_FINGERPRINT \
+    #     --secret OBAN_LICENSE_KEY \
+    #     mix hex.repo add oban https://getoban.pro/repo \
+    #         --fetch-public-key $OBAN_KEY_FINGERPRINT \
+    #         --auth-key $OBAN_LICENSE_KEY
+    # deps should be cached and added incrementally as new deps are added to `mix.exs`
+    COPY mix.exs mix.lock ./
+    DO +MIX --command="deps.get"
+    # deps should be compiled only when necessary
+    # technically you should only pull the relevant environment config.exs in (e.g. dev.exs for MIX_ENV=dev)
+    COPY --if-exists --dir config ./
+    DO +MIX --command="deps.compile"
+    # the application _could_ be compiled incrementally but it does introduce some level of flakiness so a command like `mix clean` is recommended
+    # to prevent that. alternatively you could allow incremental app compilation but have an escape hatch to do a full recompile
+    COPY --dir lib ./
+    DO +MIX --command="compile"
+
+ex-unit:
+    FROM +build
+    DO +MIX --command="test"
+
+dialyzer:
+    FROM +build
+    # plts can be stored in _build or in custom directories
+    # see https://hexdocs.pm/dialyxir/readme.html
+    DO +MIX --command="dialyzer" --MIX_ENV=test
+
+test:
+    BUILD +ex-unit
+    BUILD +dialyzer
