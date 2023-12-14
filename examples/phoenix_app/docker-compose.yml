@@ -2,20 +2,8 @@
 version: "3"
 
 services:
-  phoenix_app:
-    container_name: phoenix_app
-    image: phoenix_app:latest
-    restart: unless-stopped
-    # keep the container running forever
-    command: sh -c "sleep infinity"
-    networks:
-      - internal
-    environment:
-      - POSTGRES_SERVICE_HOST=db
-    depends_on:
-      - db
-
   db:
+    container_name: db
     image: postgres:latest
     restart: unless-stopped
     environment:

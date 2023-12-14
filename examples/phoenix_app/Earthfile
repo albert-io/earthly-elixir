@@ -19,21 +19,33 @@ build:
     DO elixir+MIX --command="deps.get"
     COPY --if-exists --dir config ./
     DO elixir+MIX --command="deps.compile"
-    COPY --dir lib ./
+    COPY --dir priv lib ./
     DO elixir+MIX --command="clean"
     DO elixir+MIX --command="compile"
+
+ex-unit-setup:
+    FROM +build
+    COPY --dir test ./
+    ENTRYPOINT ["mix", "test"]
+    SAVE IMAGE test:latest
 
 ex-unit:
   FROM earthly/dind:alpine-3.18-docker-23.0.6-r4
   WORKDIR /test
   COPY docker-compose.yml ./
+  DO elixir+INIT
   WITH DOCKER \
-        --load phoenix_app:latest=+build \
+        --load tests:latest=+ex-unit-setup \
         --compose docker-compose.yml \
-        --service phoenix_app \
         --service db
-    # this is broken because the cache isn't available
-    RUN docker exec phoenix_app mix test
+    RUN --mount=type=cache,mode=0777,id=$EARTHLY_ELIXIR_DEPS_CACHE_ID,sharing=locked,target=deps \
+        --mount=type=cache,mode=0777,id=$EARTHLY_ELIXIR_BUILD_CACHE_ID,sharing=locked,target=_build \
+      docker run \
+      --mount type=bind,source="$(pwd)"/deps,target=/app/deps \
+      --mount type=bind,source="$(pwd)"/_build,target=/app/_build \
+      --network=default_internal \
+      --env DBHOST=db \
+      tests:latest
   END
 
 test:

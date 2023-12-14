@@ -115,3 +115,7 @@ if config_env() == :prod do
   #
   # See https://hexdocs.pm/swoosh/Swoosh.html#module-installation for details.
 end
+
+if config_env() == :test do
+  config :phoenix_app, PhoenixApp.Repo, hostname: System.fetch_env!("DBHOST")
+end
