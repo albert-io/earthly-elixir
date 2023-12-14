@@ -1,0 +1,40 @@
+VERSION --global-cache 0.7
+
+IMPORT ../../ AS elixir
+
+build:
+    ARG ELIXIR_VERSION=1.15.4
+    ARG OTP_VERSION=26.0.2
+    ARG DEBIAN_VERSION=bullseye-20230612
+    FROM hexpm/elixir:$ELIXIR_VERSION-erlang-$OTP_VERSION-debian-$DEBIAN_VERSION
+    RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    ca-certificates \
+    build-essential \
+    && apt-get clean && rm -f /var/lib/apt/lists/*_*
+    WORKDIR /app
+    DO elixir+INIT
+    DO elixir+MIX --command="do local.rebar --force, local.hex --force"
+    COPY mix.exs mix.lock ./
+    DO elixir+MIX --command="deps.get"
+    COPY --if-exists --dir config ./
+    DO elixir+MIX --command="deps.compile"
+    COPY --dir lib ./
+    DO elixir+MIX --command="clean"
+    DO elixir+MIX --command="compile"
+
+ex-unit:
+  FROM earthly/dind:alpine-3.18-docker-23.0.6-r4
+  WORKDIR /test
+  COPY docker-compose.yml ./
+  WITH DOCKER \
+        --load phoenix_app:latest=+build \
+        --compose docker-compose.yml \
+        --service phoenix_app \
+        --service db
+    # this is broken because the cache isn't available
+    RUN docker exec phoenix_app mix test
+  END
+
+test:
+    BUILD +ex-unit
