@@ -42,7 +42,7 @@ RUN_WITH_CACHE:
     # TODO: MIX_HOME could be cached to prevent reinstalling hex and rebar
     RUN --mount=type=cache,mode=0777,id=$global_deps_cache_id,sharing=locked,target=$DEPS_DIR \
         --mount=type=cache,mode=0777,id=$global_build_cache_id,sharing=locked,target=$BUILD_DIR \
-        --mount=type=cache,mode=0777,id=$unique_build_cache_id,sharing=locked,target=$unique_deps_cache_dir \
+        --mount=type=cache,mode=0777,id=$unique_deps_cache_id,sharing=locked,target=$unique_deps_cache_dir \
         --mount=type=cache,mode=0777,id=$unique_build_cache_id,sharing=locked,target=$unique_build_cache_dir \
         set -e; \
         # copy out all files in deps and build to save the state of the global cache
