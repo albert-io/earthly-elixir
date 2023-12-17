@@ -33,30 +33,52 @@ RUN_WITH_CACHE:
     # global caches are accessible by all users
     ARG global_deps_cache_id=${EARTHLY_ELIXIR_DEPS_CACHE_ID}
     ARG global_build_cache_id=${EARTHLY_ELIXIR_BUILD_CACHE_ID}
+    # global backup caches exist in case a previous command failed that had a unique cache id
+    # they ensure the global caches are not overwritten
+    ARG global_deps_cache_id_backup="${EARTHLY_ELIXIR_DEPS_CACHE_ID}#backup"
+    ARG global_build_cache_id_backup="${EARTHLY_ELIXIR_BUILD_CACHE_ID}#backup"
+    ARG global_deps_cache_dir_backup="/tmp/elixir-deps-cache-backup"
+    ARG global_build_cache_dir_backup="/tmp/elixir-build-cache-backup"
     # unique caches are accessible only by the user who provies the unique_cache_id
     # if the unique_cache_id is provided, the global caches will not be overwritten
     ARG unique_deps_cache_id="${EARTHLY_ELIXIR_DEPS_CACHE_ID}#${UNIQUE_CACHE_ID}"
     ARG unique_build_cache_id="${EARTHLY_ELIXIR_BUILD_CACHE_ID}#${UNIQUE_CACHE_ID}"
     ARG unique_deps_cache_dir="/tmp/elixir-deps-cache-${UNIQUE_CACHE_ID}"
     ARG unique_build_cache_dir="/tmp/elixir-build-cache-${UNIQUE_CACHE_ID}"
+
     # TODO: MIX_HOME could be cached to prevent reinstalling hex and rebar
     RUN --mount=type=cache,mode=0777,id=$global_deps_cache_id,sharing=locked,target=$DEPS_DIR \
         --mount=type=cache,mode=0777,id=$global_build_cache_id,sharing=locked,target=$BUILD_DIR \
+        --mount=type=cache,mode=0777,id=$global_deps_cache_id_backup,sharing=locked,target=$global_deps_cache_dir_backup \
+        --mount=type=cache,mode=0777,id=$global_build_cache_id_backup,sharing=locked,target=$global_build_cache_dir_backup \
         --mount=type=cache,mode=0777,id=$unique_deps_cache_id,sharing=locked,target=$unique_deps_cache_dir \
         --mount=type=cache,mode=0777,id=$unique_build_cache_id,sharing=locked,target=$unique_build_cache_dir \
         set -e; \
-        # copy out all files in deps and build to save the state of the global cache
+        # sync the global cache and the global backup cache in case a previous command failed that had a
+        # unique cache id (or not)
+        if [ "$(find $global_deps_cache_dir_backup -mindepth 1 -print -quit 2>/dev/null)" ]; then \
+            cp -r $global_deps_cache_dir_backup/* $DEPS_DIR/; \
+        fi; \
+        if [ "$(find $global_build_cache_dir_backup -mindepth 1 -print -quit 2>/dev/null)" ]; then \
+            cp -r $global_build_cache_dir_backup/* $BUILD_DIR/; \
+        fi; \
+        # pull in files from a previous run with the same unique cache id
         if [ "$UNIQUE_CACHE_ID" != "" ]; then \
-            cp -r $DEPS_DIR/* $unique_deps_cache_dir/; \
-            cp -r $BUILD_DIR/* $unique_build_cache_dir/; \
+            if [ "$(find $unique_deps_cache_dir -mindepth 1 -print -quit 2>/dev/null)" ]; then \
+                cp -r $unique_deps_cache_dir/* $DEPS_DIR/; \
+            fi; \
+            if [ "$(find $unique_build_cache_dir -mindepth 1 -print -quit 2>/dev/null)" ]; then \
+                cp -r $unique_build_cache_dir/* $BUILD_DIR/; \
+            fi; \
         fi; \
         printf "Running:\n      $command\n"; \
         eval $command; \
-        # copy back all files in deps and build to restore the state of the global cache, removing
-        # any files that were added by the command
+        # copy all files out to the unique cache dir if a unique cache id was provided
         if [ "$UNIQUE_CACHE_ID" != "" ]; then \
-            rm -rf $DEPS_DIR/*; \
-            rm -rf $BUILD_DIR/*; \
-            cp -r $unique_deps_cache_dir/* $DEPS_DIR/; \
-            cp -r $unique_build_cache_dir/* $BUILD_DIR/; \
-        fi
+            cp -r $DEPS_DIR/* $unique_deps_cache_dir/; \
+            cp -r $BUILD_DIR/* $unique_build_cache_dir/; \
+        else \
+            # copy all files out to the global cache dir if no unique cache id was provided
+            cp -r $DEPS_DIR/* $global_deps_cache_dir_backup/; \
+            cp -r $BUILD_DIR/* $global_build_cache_dir_backup/; \
+        fi;
