@@ -75,10 +75,18 @@ RUN_WITH_CACHE:
         eval $command; \
         # copy all files out to the unique cache dir if a unique cache id was provided
         if [ "$UNIQUE_CACHE_ID" != "" ]; then \
-            cp -r $DEPS_DIR/* $unique_deps_cache_dir/; \
-            cp -r $BUILD_DIR/* $unique_build_cache_dir/; \
+            if [ "$(find $DEPS_DIR -mindepth 1 -print -quit 2>/dev/null)" ]; then \
+                cp -r $DEPS_DIR/* $unique_deps_cache_dir/; \
+            fi; \
+            if [ "$(find $BUILD_DIR -mindepth 1 -print -quit 2>/dev/null)" ]; then \
+                cp -r $BUILD_DIR/* $unique_build_cache_dir/; \
+            fi; \
         else \
             # copy all files out to the global cache dir if no unique cache id was provided
-            cp -r $DEPS_DIR/* $global_deps_cache_dir_backup/; \
-            cp -r $BUILD_DIR/* $global_build_cache_dir_backup/; \
+            if [ "$(find $DEPS_DIR -mindepth 1 -print -quit 2>/dev/null)" ]; then \
+                cp -r $DEPS_DIR/* $global_deps_cache_dir_backup/; \
+            fi; \
+            if [ "$(find $BUILD_DIR -mindepth 1 -print -quit 2>/dev/null)" ]; then \
+                cp -r $BUILD_DIR/* $global_build_cache_dir_backup/; \
+            fi; \
         fi;
