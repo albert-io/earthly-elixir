@@ -1,3 +1,5 @@
+This project is no longer used or maintained.
+
 # earthly-elixir
 
 Attempt at making generic Elixir functions for earthly that utilize caching.
